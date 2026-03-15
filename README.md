@@ -64,13 +64,15 @@ python analyze_all.py
 python bot.py
 ```
 
-看到 `Bot 已上線` 後，在 Discord 頻道輸入：
+看到 `Bot 已上線` 後，在 Discord 頻道使用指令：
 
-```
-/analyze 0xYourWalletAddress
-```
+**步驟一：輸入 `/` 叫出指令提示，選擇 `/analyze`**
 
-Bot 會公開回覆統計結果。
+![輸入指令](images/usage_slash.png)
+
+**步驟二：輸入你的 BSC 錢包地址後送出，Bot 會公開回覆統計結果**
+
+![查詢結果](images/usage_result.png)
 
 ## 新增卡包合約
 
@@ -83,16 +85,4 @@ PACK_CONTRACTS = {addr.lower() for addr in {
     "0xb2891022648c5fad3721c42c05d8d283d4d53080",
     "0x新合約地址",  # 新增這裡
 }}
-```
-
-## 檔案結構
-
-```
-renaiss/
-├── analyze_all.py      # 核心分析邏輯
-├── bot.py              # Discord Bot
-├── requirements.txt    # 依賴套件
-├── .env                # 密鑰（不要上傳至 Git）
-├── .env.example        # 設定範本
-└── .gitignore
 ```
