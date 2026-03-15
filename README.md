@@ -76,7 +76,7 @@ python bot.py
 
 ## 新增卡包合約
 
-若項目方推出新版卡包合約，在 `analyze_all.py` 的 `PACK_CONTRACTS` 加入新地址（注意全小寫）：
+若項目方推出新版卡包合約，在 `analyze_all.py` 的 `PACK_CONTRACTS` 加入新地址：
 
 ```python
 PACK_CONTRACTS = {addr.lower() for addr in {
