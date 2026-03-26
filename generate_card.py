@@ -146,9 +146,10 @@ DB_FILE     = "nft_data.db"
 
 os.makedirs(CARDS_DIR, exist_ok=True)
 
-FONT_BOLD   = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
-FONT_REG    = "/System/Library/Fonts/Helvetica.ttc"
-FONT_MONO   = "/System/Library/Fonts/SFNSMono.ttf"
+_FONTS_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+FONT_BOLD   = os.path.join(_FONTS_DIR, "DejaVuSans-Bold.ttf")
+FONT_REG    = os.path.join(_FONTS_DIR, "DejaVuSans.ttf")
+FONT_MONO   = os.path.join(_FONTS_DIR, "DejaVuSansMono.ttf")
 
 # Colors — dark-on-white palette
 NAVY        = (28,  48,  80)      # Renaiss brand dark text
