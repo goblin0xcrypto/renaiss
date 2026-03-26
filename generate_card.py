@@ -161,19 +161,22 @@ DIVIDER     = (220, 225, 235)
 WHITE       = (255, 255, 255)
 
 
-def load_data(address: str) -> dict:
-    conn = sqlite3.connect(DB_FILE)
-    rank_row = conn.execute(
-        "SELECT rank, total_sbt FROM rankings WHERE address = ?", (address,)
-    ).fetchone()
-    total_holders = conn.execute("SELECT COUNT(*) FROM rankings").fetchone()[0]
-    meta_count = conn.execute("SELECT COUNT(*) FROM sbt_metadata").fetchone()[0]
-    total_types = meta_count if meta_count > 0 else len(TOKEN_IMAGES)
-    tokens = conn.execute(
-        "SELECT token_id, token_name FROM holdings WHERE address = ? ORDER BY token_id",
-        (address,)
-    ).fetchall()
-    conn.close()
+def load_data(address: str) -> dict | None:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        rank_row = conn.execute(
+            "SELECT rank, total_sbt FROM rankings WHERE address = ?", (address,)
+        ).fetchone()
+        total_holders = conn.execute("SELECT COUNT(*) FROM rankings").fetchone()[0]
+        meta_count = conn.execute("SELECT COUNT(*) FROM sbt_metadata").fetchone()[0]
+        total_types = meta_count if meta_count > 0 else len(TOKEN_IMAGES)
+        tokens = conn.execute(
+            "SELECT token_id, token_name FROM holdings WHERE address = ? ORDER BY token_id",
+            (address,)
+        ).fetchall()
+        conn.close()
+    except sqlite3.OperationalError:
+        return None
 
     return {
         "address": address,
@@ -315,6 +318,8 @@ def generate_card_for_address(address: str) -> str | None:
     """Generate card for given address. Returns output path, or None if not found in DB."""
     address = address.lower()
     data = load_data(address)
+    if data is None:
+        return None
     if data["rank"] == 0 and data["total_sbt"] == 0:
         return None
     return make_card(data)
