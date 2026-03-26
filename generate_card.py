@@ -10,8 +10,10 @@ import sqlite3
 import urllib.request
 from PIL import Image, ImageDraw, ImageFont
 
-SBT_BASE = "https://8nothtoc5ds7a0x3.public.blob.vercel-storage.com/SBT/minified/"
-SBT_CACHE = "images/sbt"
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SBT_BASE  = "https://8nothtoc5ds7a0x3.public.blob.vercel-storage.com/SBT/minified/"
+SBT_CACHE = os.path.join(_BASE_DIR, "images", "sbt")
+os.makedirs(SBT_CACHE, exist_ok=True)
 
 # token_id -> filename (slug from JS bundle)
 TOKEN_IMAGES = {
@@ -141,12 +143,12 @@ def get_sbt_image(token_id: int, size: int) -> Image.Image | None:
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 DEFAULT_TARGET = "0x17c011298047e8ebd116749782a3d5f3c618d8b7"
-CARDS_DIR   = "images/cards"
-DB_FILE     = "nft_data.db"
+CARDS_DIR   = os.path.join(_BASE_DIR, "images", "cards")
+DB_FILE     = os.path.join(_BASE_DIR, "nft_data.db")
 
 os.makedirs(CARDS_DIR, exist_ok=True)
 
-_FONTS_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
+_FONTS_DIR  = os.path.join(_BASE_DIR, "fonts")
 FONT_BOLD   = os.path.join(_FONTS_DIR, "DejaVuSans-Bold.ttf")
 FONT_REG    = os.path.join(_FONTS_DIR, "DejaVuSans.ttf")
 FONT_MONO   = os.path.join(_FONTS_DIR, "DejaVuSansMono.ttf")
@@ -190,14 +192,15 @@ def load_data(address: str) -> dict | None:
 
 
 def _bg_image(rank: int) -> str:
+    _img = os.path.join(_BASE_DIR, "images")
     if rank <= 10:
-        return "images/gold.jpg"
+        return os.path.join(_img, "gold.jpg")
     elif rank <= 50:
-        return "images/silver.jpg"
+        return os.path.join(_img, "silver.jpg")
     elif rank <= 100:
-        return "images/copper.jpg"
+        return os.path.join(_img, "copper.jpg")
     else:
-        return "images/black.jpg"
+        return os.path.join(_img, "black.jpg")
 
 
 def make_card(data: dict) -> str:
