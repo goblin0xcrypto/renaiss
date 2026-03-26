@@ -86,3 +86,75 @@ PACK_CONTRACTS = {addr.lower() for addr in {
     "0x新合約地址",  # 新增這裡
 }}
 ```
+
+---
+
+# Renaiss SBT Ranking Bot
+
+查詢 Renaiss 平台所有會員的 SBT（靈魂綁定代幣）持有量，並透過 Discord Bot 生成個人排名卡片。
+
+## SBT 功能
+
+- **自動同步鏈上數據**：每十分鐘從 BSCScan 抓取最新 ERC-1155 轉帳記錄，增量更新持有量
+- **自動發現新 SBT**：每次更新時解析 renaiss.xyz JS bundle，自動載入新增的 SBT 類型（名稱、圖片）
+- **排名卡片生成**：根據排名顯示不同底圖（金/銀/銅/黑），卡片包含地址、總 SBT 數、排名、所有成就
+- **Discord 斜線指令**：`/sbt_rank` 輸入錢包地址即可查詢
+
+## 展示
+
+![排名卡片展示](images/cards/0xab0e1c77.png)
+
+> Rank 1 持有者，擁有 52 個 SBT
+
+底圖規則：
+| 排名 | 底圖 |
+|------|------|
+| Top 10 | 金色 |
+| Top 50 | 銀色 |
+| Top 100 | 銅色 |
+| 其他 | 黑色 |
+
+## SBT Bot 使用方式
+
+### 啟動 Bot
+
+```bash
+python bot.py
+```
+
+Bot 啟動後會：
+1. 立即執行一次資料更新（同步鏈上數據 + 解析新 SBT）
+2. 之後每十分鐘自動更新一次
+
+### Discord 指令
+
+在 Discord 頻道輸入：
+
+```
+/sbt_rank address:0xYourWalletAddress
+```
+
+Bot 會回傳該地址的個人排名卡片圖片。
+
+若地址不在資料庫中（尚未更新或未持有任何 SBT），會提示等待下次更新。
+
+### CLI 手動操作
+
+```bash
+# 立即抓取最新鏈上數據並更新 DB
+python nft_top_holders.py
+
+# 手動生成指定地址的卡片
+python generate_card.py 0xYourWalletAddress
+```
+
+## 資料存儲
+
+所有資料存於 `nft_data.db`（SQLite）：
+
+| Table | 說明 |
+|-------|------|
+| `holdings` | 每個地址持有的每種 SBT 數量 |
+| `rankings` | 地址排名與總 SBT 數 |
+| `sbt_metadata` | SBT 類型、名稱、圖片檔名（自動更新）|
+| `state` | 最後同步的區塊高度與持有量快照 |
