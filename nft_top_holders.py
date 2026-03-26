@@ -92,8 +92,9 @@ def load_achievements_from_db() -> dict[str, str]:
     return ACHIEVEMENTS
 
 # Load env
+import os as _os
 config = dotenv_values(".env")
-API_KEY = config.get("BSCSCAN_API_KEY")
+API_KEY = config.get("BSCSCAN_API_KEY") or _os.environ.get("BSCSCAN_API_KEY")
 
 CONTRACT = "0x7D1B7dB704d722295fbAa284008f526634673DbF"
 BSC_API = "https://api.etherscan.io/v2/api"

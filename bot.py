@@ -19,7 +19,7 @@ from discord import app_commands
 from dotenv import dotenv_values
 
 config = dotenv_values(".env")
-TOKEN = config.get("DISCORD_TOKEN")
+TOKEN = config.get("DISCORD_TOKEN") or os.environ.get("DISCORD_TOKEN")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
