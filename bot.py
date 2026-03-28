@@ -13,6 +13,7 @@ Background task:
 
 import asyncio
 import re
+import sqlite3
 import subprocess
 import sys
 import os
@@ -24,7 +25,32 @@ config = dotenv_values(".env")
 TOKEN = config.get("DISCORD_TOKEN") or os.environ.get("DISCORD_TOKEN")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FILE  = os.environ.get("DB_FILE") or os.path.join(BASE_DIR, "nft_data.db")
 sys.path.insert(0, BASE_DIR)
+
+
+# ── User wallet helpers ─────────────────────────────────────────────────────────
+
+def _get_user_wallet(discord_id: int) -> str | None:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.execute("CREATE TABLE IF NOT EXISTS user_wallets (discord_id INTEGER PRIMARY KEY, address TEXT NOT NULL)")
+        row = conn.execute("SELECT address FROM user_wallets WHERE discord_id = ?", (discord_id,)).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+def _save_user_wallet(discord_id: int, address: str):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.execute("CREATE TABLE IF NOT EXISTS user_wallets (discord_id INTEGER PRIMARY KEY, address TEXT NOT NULL)")
+        conn.execute("INSERT OR REPLACE INTO user_wallets VALUES (?, ?)", (discord_id, address.lower()))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 class Bot(discord.Client):
@@ -48,15 +74,35 @@ async def on_ready():
 
 # ── /analyze ───────────────────────────────────────────────────────────────────
 
+async def _wallet_autocomplete(interaction: discord.Interaction, current: str):
+    saved = _get_user_wallet(interaction.user.id)
+    if saved and (not current or saved.startswith(current.lower())):
+        return [app_commands.Choice(name=saved, value=saved)]
+    return []
+
+
 @client.tree.command(name="analyze", description="分析 Renaiss 錢包的 USDT 交易統計")
-@app_commands.describe(wallet="BSC 錢包地址（0x 開頭）")
-async def analyze(interaction: discord.Interaction, wallet: str):
-    if not re.fullmatch(r"0x[0-9a-fA-F]{40}", wallet):
-        await interaction.response.send_message(
-            "❌ 錢包地址格式錯誤，請輸入正確的 BSC 地址（0x 開頭，42 個字元）",
-            ephemeral=True,
-        )
-        return
+@app_commands.describe(wallet="BSC 錢包地址（0x 開頭）— 不填則使用上次的地址")
+@app_commands.autocomplete(wallet=_wallet_autocomplete)
+async def analyze(interaction: discord.Interaction, wallet: str = None):
+    uid = interaction.user.id
+
+    if wallet:
+        if not re.fullmatch(r"0x[0-9a-fA-F]{40}", wallet):
+            await interaction.response.send_message(
+                "❌ 錢包地址格式錯誤，請輸入正確的 BSC 地址（0x 開頭，42 個字元）",
+                ephemeral=True,
+            )
+            return
+        _save_user_wallet(uid, wallet)
+    else:
+        wallet = _get_user_wallet(uid)
+        if not wallet:
+            await interaction.response.send_message(
+                "❌ 尚無儲存的地址，請輸入你的 BSC 錢包地址。",
+                ephemeral=True,
+            )
+            return
 
     await interaction.response.defer()
 
@@ -120,15 +166,35 @@ async def analyze(interaction: discord.Interaction, wallet: str):
 
 # ── /sbt_rank ──────────────────────────────────────────────────────────────────
 
+async def _address_autocomplete(interaction: discord.Interaction, current: str):
+    saved = _get_user_wallet(interaction.user.id)
+    if saved and (not current or saved.startswith(current.lower())):
+        return [app_commands.Choice(name=saved, value=saved)]
+    return []
+
+
 @client.tree.command(name="sbt_rank", description="Generate your Renaiss SBT ranking card")
-@app_commands.describe(address="Your BSC wallet address (0x...)")
-async def sbt_rank(interaction: discord.Interaction, address: str):
-    if not address.startswith("0x") or len(address) != 42:
-        await interaction.response.send_message(
-            "Invalid address. Please provide a valid BSC address (0x + 40 hex chars).",
-            ephemeral=True,
-        )
-        return
+@app_commands.describe(address="Your BSC wallet address (0x...) — omit to use your saved address")
+@app_commands.autocomplete(address=_address_autocomplete)
+async def sbt_rank(interaction: discord.Interaction, address: str = None):
+    uid = interaction.user.id
+
+    if address:
+        if not re.fullmatch(r"0x[0-9a-fA-F]{40}", address):
+            await interaction.response.send_message(
+                "Invalid address. Please provide a valid BSC address (0x + 40 hex chars).",
+                ephemeral=True,
+            )
+            return
+        _save_user_wallet(uid, address)
+    else:
+        address = _get_user_wallet(uid)
+        if not address:
+            await interaction.response.send_message(
+                "No saved address found. Please provide your BSC wallet address.",
+                ephemeral=True,
+            )
+            return
 
     await interaction.response.defer()
 
