@@ -144,7 +144,7 @@ def get_sbt_image(token_id: int, size: int) -> Image.Image | None:
 # ── Config ─────────────────────────────────────────────────────────────────────
 DEFAULT_TARGET = "0x17c011298047e8ebd116749782a3d5f3c618d8b7"
 CARDS_DIR   = os.path.join(_BASE_DIR, "images", "cards")
-DB_FILE     = os.path.join(_BASE_DIR, "nft_data.db")
+DB_FILE     = os.environ.get("DB_FILE") or os.path.join(_BASE_DIR, "nft_data.db")
 
 os.makedirs(CARDS_DIR, exist_ok=True)
 

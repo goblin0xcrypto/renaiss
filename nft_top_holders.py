@@ -101,7 +101,7 @@ BSC_API = "https://api.etherscan.io/v2/api"
 CHAIN_ID = 56  # BSC mainnet
 ZERO = "0x0000000000000000000000000000000000000000"
 TARGET = "0x17C011298047e8EBd116749782A3d5f3C618d8B7".lower()
-DB_FILE = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "nft_data.db")
+DB_FILE = _os.environ.get("DB_FILE") or _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "nft_data.db")
 
 ACHIEVEMENTS = {
     "1": "The Trader", "2": "Pack Opener", "3": "The Recruiter",
