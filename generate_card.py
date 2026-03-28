@@ -228,14 +228,19 @@ def make_card(data: dict) -> str:
     draw = ImageDraw.Draw(canvas, "RGBA")
 
     # ── Fonts ──────────────────────────────────────────────────────────────────
-    rank_digits = len(str(data["rank"]))
-    if rank_digits >= 5:
-        rank_font_size = 90
-    elif rank_digits == 4:
-        rank_font_size = 115
-    else:
-        rank_font_size = 160
-    f_rank   = ImageFont.truetype(FONT_BOLD, rank_font_size)
+    rank_str      = f"{data['rank']}"
+    WREATH_MAX_W  = 220   # max pixel width for rank text inside wreath inner circle
+    rank_font_size = 160
+    f_rank = ImageFont.truetype(FONT_BOLD, rank_font_size)
+    rank_bbox = f_rank.getbbox(rank_str)
+    rank_w    = rank_bbox[2] - rank_bbox[0]
+    while rank_w > WREATH_MAX_W and rank_font_size > 40:
+        rank_font_size -= 4
+        f_rank    = ImageFont.truetype(FONT_BOLD, rank_font_size)
+        rank_bbox = f_rank.getbbox(rank_str)
+        rank_w    = rank_bbox[2] - rank_bbox[0]
+    rank_h = rank_bbox[3] - rank_bbox[1]
+
     f_label  = ImageFont.truetype(FONT_BOLD,  22)
     f_small  = ImageFont.truetype(FONT_REG,   18)
     f_mono   = ImageFont.truetype(FONT_MONO,  18)
@@ -260,21 +265,17 @@ def make_card(data: dict) -> str:
     draw.text((PAD, y + sbt_bbox[3] + 14), f"of {data['total_types']} types", font=f_small, fill=DARK)
 
     # ── RANK: centered inside the wreath ──────────────────────────────────────
-    rank_str  = f"{data['rank']}"
-    rank_bbox = f_rank.getbbox(rank_str)
-    rank_w    = rank_bbox[2] - rank_bbox[0]
-    rank_h    = rank_bbox[3] - rank_bbox[1]
 
-    # Draw rank number centered at wreath center
-    rx = WREATH_CX - rank_w // 2 - rank_bbox[0]
-    ry = WREATH_CY - rank_h // 2 - rank_bbox[1]
+    # Draw rank number centered at wreath center (shifted right+down)
+    rx = WREATH_CX - rank_w // 2 - rank_bbox[0] + 30
+    ry = WREATH_CY - rank_h // 2 - rank_bbox[1] + 60
     draw.text((rx, ry), rank_str, font=f_rank, fill=NAVY)
 
-    # "RANK" label — top-left corner of wreath inner area
-    draw.text((380, 65), "RANK", font=f_label, fill=GOLD)
+    # "RANK" label — moved down
+    draw.text((380, 135), "RANK", font=f_label, fill=GOLD)
 
-    # "of X,XXX holders" — bottom-right corner of wreath inner area
-    draw.text((800, 375), f"of {data['total_holders']:,}\nholders", font=f_small, fill=DARK)
+    # "of X,XXX holders" — shifted right+down
+    draw.text((830, 440), f"of {data['total_holders']:,}\nholders", font=f_small, fill=DARK)
 
     # ── BOTTOM: achievements list ──────────────────────────────────────────────
     title_y = MID + PAD - 10
