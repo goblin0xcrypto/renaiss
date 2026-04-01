@@ -164,6 +164,68 @@ async def analyze(interaction: discord.Interaction, wallet: str = None):
     await interaction.followup.send(embed=embed)
 
 
+# ── /sbt_stats ─────────────────────────────────────────────────────────────────
+
+def _sbt_stats_query() -> list[tuple[str, int]]:
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        rows = conn.execute("""
+            SELECT m.name, COUNT(DISTINCT h.address) AS holders
+            FROM sbt_metadata m
+            LEFT JOIN holdings h ON h.token_id = m.token_id
+            GROUP BY m.token_id
+            ORDER BY holders DESC
+        """).fetchall()
+        conn.close()
+        return rows
+    except Exception:
+        return []
+
+
+_EMBED_DESC_LIMIT = 4096
+
+
+def _sbt_stats_embeds(rows: list) -> list[discord.Embed]:
+    """Split rows into multiple embeds, each within the description character limit."""
+    header = "**SBT Name** — Number of unique holders\n\n"
+    lines = [f"**{name}** — {holders:,}" for name, holders in rows]
+
+    embeds, current_lines, total = [], [], len(header)
+    for line in lines:
+        cost = len(line) + 1  # +1 for newline
+        if total + cost > _EMBED_DESC_LIMIT:
+            embeds.append("\n".join(current_lines))
+            current_lines, total = [], 0
+        current_lines.append(line)
+        total += cost
+    if current_lines:
+        embeds.append("\n".join(current_lines))
+
+    result = []
+    for i, desc in enumerate(embeds):
+        embed = discord.Embed(
+            title="📊 SBT Holder Statistics",
+            description=(header + desc) if i == 0 else desc,
+            color=discord.Color.gold(),
+        )
+        if i == len(embeds) - 1:
+            embed.set_footer(text=f"{len(rows)} SBT types · Updated every 10 minutes")
+        result.append(embed)
+    return result
+
+
+@client.tree.command(name="sbt_stats", description="View holder count for each SBT")
+async def sbt_stats(interaction: discord.Interaction):
+    rows = _sbt_stats_query()
+    if not rows:
+        await interaction.response.send_message("❌ No data available.", ephemeral=True)
+        return
+    embeds = _sbt_stats_embeds(rows)
+    await interaction.response.send_message(embed=embeds[0])
+    for embed in embeds[1:]:
+        await interaction.followup.send(embed=embed)
+
+
 # ── /sbt_rank ──────────────────────────────────────────────────────────────────
 
 async def _address_autocomplete(interaction: discord.Interaction, current: str):

@@ -128,15 +128,80 @@ Bot 啟動後會：
 
 ### Discord 指令
 
-在 Discord 頻道輸入：
+#### `/sbt_rank` — 產生個人排名卡片
 
+| 參數 | 必填 | 說明 |
+|------|------|------|
+| `address` | 否 | BSC 錢包地址（0x 開頭，42 字元）|
+
+**第一次使用**（填入地址，Bot 會記住）：
 ```
-/sbt_rank address:0xYourWalletAddress
+/sbt_rank address:0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
 ```
 
-Bot 會回傳該地址的個人排名卡片圖片。
+**之後使用**（不填地址，自動帶入上次的地址）：
+```
+/sbt_rank
+```
 
-若地址不在資料庫中（尚未更新或未持有任何 SBT），會提示等待下次更新。
+**換地址**（填新地址，自動覆蓋舊記錄）：
+```
+/sbt_rank address:0xABCDEF1234567890ABCDEF1234567890ABCDEF12
+```
+
+> **Autocomplete 提示**：點擊 `address` 欄位時，Discord 會自動跳出已儲存的地址，點一下即可帶入。
+
+Bot 回傳該地址的個人排名卡片圖片。若地址不在資料庫中，會提示等待下次更新（每 10 分鐘同步一次）。
+
+---
+
+#### `/analyze` — 分析 USDT 交易統計
+
+| 參數 | 必填 | 說明 |
+|------|------|------|
+| `wallet` | 否 | BSC 錢包地址（0x 開頭，42 字元）|
+
+**第一次使用**（填入地址，Bot 會記住）：
+```
+/analyze wallet:0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+```
+
+**之後使用**（不填地址，自動帶入上次的地址）：
+```
+/analyze
+```
+
+> `/analyze` 與 `/sbt_rank` 共用同一個儲存地址，填過其中一個指令後，兩個指令都可以直接省略地址。
+
+Bot 回傳包含以下資訊的統計卡：
+- 開卡包次數與花費 USDT
+- Buyback 賣回項目方收到的 USDT
+- 交易平台買入 / 賣出的 USDT
+- 淨支出或淨獲利
+
+---
+
+#### `/sbt_stats` — 查看各 SBT 持有人數統計
+
+無需任何參數，直接輸入：
+```
+/sbt_stats
+```
+
+Bot 回傳所有 SBT 類型及其持有人數，格式如下：
+```
+SBT Name — Number of unique holders
+
+The Recruiter — 28,730
+Beta Pioneer — 24,881
+X Linker — 8,181
+...
+```
+
+- 依持有人數由多到少排列
+- 包含 0 持有人的 SBT 類型
+- 若資料量超過 Embed 上限，自動分多則送出
+- 資料來源與 `/sbt_rank` 相同，每 10 分鐘自動更新
 
 ### CLI 手動操作
 
@@ -158,3 +223,4 @@ python generate_card.py 0xYourWalletAddress
 | `rankings` | 地址排名與總 SBT 數 |
 | `sbt_metadata` | SBT 類型、名稱、圖片檔名（自動更新）|
 | `state` | 最後同步的區塊高度與持有量快照 |
+| `user_wallets` | Discord 使用者 ID 與綁定的錢包地址 |
