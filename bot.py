@@ -4,8 +4,10 @@ bot.py
 Discord bot for Renaiss.
 
 Commands:
-  /analyze <wallet>  — analyze USDT transaction stats for a BSC wallet
-  /sbt_rank <address> — generate SBT ranking card for a BSC address
+  /analyze <wallet>          — analyze USDT transaction stats for a BSC wallet
+  /sbt_rank <address>        — generate SBT ranking card for a BSC address
+  /sbt_stats                 — view holder count for each SBT
+  /pack_leaderboard          — top 200 pack openers since 2026-05-01 (UTC+8)
 
 Background task:
   Every 10 minutes: runs nft_top_holders.py to refresh on-chain SBT data
@@ -17,6 +19,8 @@ import sqlite3
 import subprocess
 import sys
 import os
+import time
+import requests
 import discord
 from discord import app_commands
 from dotenv import dotenv_values
@@ -281,6 +285,208 @@ def _generate(address: str):
     return generate_card_for_address(address)
 
 
+
+# ── /pack_leaderboard ──────────────────────────────────────────────────────────
+
+# 2026-05-01 00:00:00 UTC+8 = 2026-04-30 16:00:00 UTC
+_PACK_LB_START_TS = 1777564800
+_PACK_LB_START_LABEL = "2026-05-01 00:00 UTC+8"
+
+_PACK_CONTRACT_LIST = [
+    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a",
+    "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",
+    "0xb2891022648c5fad3721c42c05d8d283d4d53080",
+]
+
+_BSCSCAN_API   = "https://api.etherscan.io/v2/api"
+_USDT_CONTRACT = "0x55d398326f99059ff775485246999027b3197955"
+
+
+def _pack_db_init(conn: sqlite3.Connection):
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS pack_opens (
+            tx_hash      TEXT PRIMARY KEY,
+            contract     TEXT NOT NULL,
+            buyer        TEXT NOT NULL,
+            block_number INTEGER NOT NULL,
+            timestamp    INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pack_sync_state (
+            contract     TEXT PRIMARY KEY,
+            last_block   INTEGER NOT NULL
+        );
+    """)
+    conn.commit()
+
+
+def _get_start_block(api_key: str) -> int:
+    """Convert _PACK_LB_START_TS to BSC block number."""
+    resp = requests.get(_BSCSCAN_API, params={
+        "chainid": 56,
+        "module": "block",
+        "action": "getblocknobytime",
+        "timestamp": _PACK_LB_START_TS,
+        "closest": "before",
+        "apikey": api_key,
+    }, timeout=30).json()
+    try:
+        return int(resp["result"])
+    except Exception:
+        return 0
+
+
+def _sync_pack_opens():
+    """Fetch only new on-chain pack opens and persist them to DB."""
+    api_key = (
+        dotenv_values(".env").get("BSCSCAN_API_KEY")
+        or os.environ.get("BSCSCAN_API_KEY", "")
+    )
+    genesis_block = _get_start_block(api_key)
+
+    conn = sqlite3.connect(DB_FILE)
+    _pack_db_init(conn)
+
+    for contract in _PACK_CONTRACT_LIST:
+        row = conn.execute(
+            "SELECT last_block FROM pack_sync_state WHERE contract = ?", (contract,)
+        ).fetchone()
+        cursor_block = row[0] if row else genesis_block
+
+        while True:
+            params = {
+                "chainid": 56,
+                "module": "account",
+                "action": "tokentx",
+                "address": contract,
+                "contractaddress": _USDT_CONTRACT,
+                "startblock": cursor_block,
+                "page": 1,
+                "offset": 10000,
+                "sort": "asc",
+                "apikey": api_key,
+            }
+            resp = requests.get(_BSCSCAN_API, params=params, timeout=30).json()
+            if resp.get("message") == "No transactions found":
+                break
+            data = resp.get("result")
+            if not isinstance(data, list) or not data:
+                break
+
+            new_txs = 0
+            rows = []
+            for tx in data:
+                ts = int(tx.get("timeStamp", 0))
+                if ts < _PACK_LB_START_TS:
+                    continue
+                if tx.get("to", "").lower() != contract:
+                    continue
+                rows.append((
+                    tx["hash"],
+                    contract,
+                    tx.get("from", "").lower(),
+                    int(tx["blockNumber"]),
+                    ts,
+                ))
+                new_txs += 1
+
+            if rows:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO pack_opens VALUES (?,?,?,?,?)", rows
+                )
+                conn.commit()
+
+            if len(data) < 10000 or new_txs == 0:
+                last_block = int(data[-1]["blockNumber"])
+                conn.execute(
+                    "INSERT OR REPLACE INTO pack_sync_state VALUES (?,?)",
+                    (contract, last_block),
+                )
+                conn.commit()
+                break
+
+            cursor_block = int(data[-1]["blockNumber"])
+            time.sleep(0.25)
+
+    conn.close()
+
+
+def _query_pack_counts() -> dict[str, int]:
+    """Return {buyer: pack_count} from the local DB cache."""
+    conn = sqlite3.connect(DB_FILE)
+    _pack_db_init(conn)
+    rows = conn.execute(
+        "SELECT buyer, COUNT(*) FROM pack_opens GROUP BY buyer"
+    ).fetchall()
+    conn.close()
+    return {addr: cnt for addr, cnt in rows}
+
+
+_PACK_LB_PAGE_SIZE = 50
+
+
+def _pack_lb_embeds(counts: dict[str, int]) -> list[discord.Embed]:
+    ranked = sorted(counts.items(), key=lambda x: x[1], reverse=True)[:50]
+
+    lines = [
+        f"`#{i+1:<3}` `{addr[:6]}...{addr[-4:]}` — **{cnt}** pack{'s' if cnt != 1 else ''}"
+        for i, (addr, cnt) in enumerate(ranked)
+    ]
+
+    header = (
+        f"**Top 50 Pack Openers**\n"
+        f"Since {_PACK_LB_START_LABEL}\n\n"
+    )
+
+    # Split into pages: max _PACK_LB_PAGE_SIZE entries OR _EMBED_DESC_LIMIT chars
+    pages = []
+    chunk, total = [], len(header)
+    for line in lines:
+        cost = len(line) + 1
+        if len(chunk) >= _PACK_LB_PAGE_SIZE or total + cost > _EMBED_DESC_LIMIT:
+            pages.append(chunk)
+            chunk, total = [], 0
+        chunk.append(line)
+        total += cost
+    if chunk:
+        pages.append(chunk)
+
+    result = []
+    for i, group in enumerate(pages):
+        desc = (header + "\n".join(group)) if i == 0 else "\n".join(group)
+        embed = discord.Embed(
+            title="📦 Pack Opening Leaderboard",
+            description=desc,
+            color=discord.Color.blurple(),
+        )
+        if i == len(pages) - 1:
+            total_opens = sum(counts.values())
+            embed.set_footer(
+                text=f"{len(counts)} unique addresses · {total_opens} total packs opened"
+            )
+        result.append(embed)
+    return result
+
+
+@client.tree.command(name="pack_leaderboard", description="Top 50 pack openers since 2026-05-01 (UTC+8)")
+async def pack_leaderboard(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, _sync_pack_opens)
+        counts = await asyncio.get_event_loop().run_in_executor(None, _query_pack_counts)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Failed to fetch data: {e}")
+        return
+
+    if not counts:
+        await interaction.followup.send("No pack opens found since the start date.")
+        return
+
+    embeds = _pack_lb_embeds(counts)
+    await interaction.followup.send(embed=embeds[0])
+    for embed in embeds[1:]:
+        await interaction.followup.send(embed=embed)
+
+
 # ── Background update ──────────────────────────────────────────────────────────
 
 def _run_update():
@@ -290,6 +496,10 @@ def _run_update():
             cwd=BASE_DIR, check=True, capture_output=True
         )
     except subprocess.CalledProcessError:
+        pass
+    try:
+        _sync_pack_opens()
+    except Exception:
         pass
 
 
