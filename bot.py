@@ -288,15 +288,29 @@ def _generate(address: str):
 
 # ── /pack_leaderboard ──────────────────────────────────────────────────────────
 
-# 2026-05-01 00:00:00 UTC+8 = 2026-04-30 16:00:00 UTC
-_PACK_LB_START_TS = 1777564800
-_PACK_LB_START_LABEL = "2026-05-01 00:00 UTC+8"
+# Earliest block to sync from (2026-05-01 00:00 UTC+8); data before this is ignored
+_PACK_GENESIS_TS = 1777564800
 
-_PACK_CONTRACT_LIST = [
-    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a",
-    "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",
-    "0xb2891022648c5fad3721c42c05d8d283d4d53080",
-]
+def _month_start_ts() -> int:
+    """Unix timestamp for 00:00:00 UTC+8 on the first day of the current month."""
+    from datetime import datetime, timezone, timedelta
+    utc8 = timezone(timedelta(hours=8))
+    now  = datetime.now(utc8)
+    return int(datetime(now.year, now.month, 1, tzinfo=utc8).timestamp())
+
+def _month_label() -> str:
+    from datetime import datetime, timezone, timedelta
+    utc8 = timezone(timedelta(hours=8))
+    return datetime.now(utc8).strftime("%Y-%m")
+
+def _load_pack_contracts() -> list[str]:
+    raw = (
+        dotenv_values(".env").get("PACK_CONTRACTS")
+        or os.environ.get("PACK_CONTRACTS", "")
+    )
+    return [a.strip().lower() for a in raw.split(",") if a.strip()]
+
+_PACK_CONTRACT_LIST = _load_pack_contracts()
 
 _BSCSCAN_API   = "https://api.etherscan.io/v2/api"
 _USDT_CONTRACT = "0x55d398326f99059ff775485246999027b3197955"
@@ -325,7 +339,7 @@ def _get_start_block(api_key: str) -> int:
         "chainid": 56,
         "module": "block",
         "action": "getblocknobytime",
-        "timestamp": _PACK_LB_START_TS,
+        "timestamp": _PACK_GENESIS_TS,
         "closest": "before",
         "apikey": api_key,
     }, timeout=30).json()
@@ -376,7 +390,7 @@ def _sync_pack_opens():
             rows = []
             for tx in data:
                 ts = int(tx.get("timeStamp", 0))
-                if ts < _PACK_LB_START_TS:
+                if ts < _PACK_GENESIS_TS:
                     continue
                 if tx.get("to", "").lower() != contract:
                     continue
@@ -411,11 +425,12 @@ def _sync_pack_opens():
 
 
 def _query_pack_counts() -> dict[str, int]:
-    """Return {buyer: pack_count} from the local DB cache."""
+    """Return {buyer: pack_count} for the current calendar month (UTC+8)."""
     conn = sqlite3.connect(DB_FILE)
     _pack_db_init(conn)
     rows = conn.execute(
-        "SELECT buyer, COUNT(*) FROM pack_opens GROUP BY buyer"
+        "SELECT buyer, COUNT(*) FROM pack_opens WHERE timestamp >= ? GROUP BY buyer",
+        (_month_start_ts(),),
     ).fetchall()
     conn.close()
     return {addr: cnt for addr, cnt in rows}
@@ -433,8 +448,8 @@ def _pack_lb_embeds(counts: dict[str, int]) -> list[discord.Embed]:
     ]
 
     header = (
-        f"**Top 50 Pack Openers**\n"
-        f"Since {_PACK_LB_START_LABEL}\n\n"
+        f"**Top 50 Pack Openers — {_month_label()}**\n"
+        f"Since {_month_label()}-01 00:00 UTC+8\n\n"
     )
 
     # Split into pages: max _PACK_LB_PAGE_SIZE entries OR _EMBED_DESC_LIMIT chars
@@ -467,7 +482,7 @@ def _pack_lb_embeds(counts: dict[str, int]) -> list[discord.Embed]:
     return result
 
 
-@client.tree.command(name="pack_leaderboard", description="Top 50 pack openers since 2026-05-01 (UTC+8)")
+@client.tree.command(name="pack_leaderboard", description="Top 50 pack openers for the current month (UTC+8)")
 async def pack_leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
     try:

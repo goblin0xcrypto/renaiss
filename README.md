@@ -31,6 +31,7 @@ cp .env.example .env
 ```env
 BSCSCAN_API_KEY=your_bscscan_api_key_here
 DISCORD_TOKEN=your_discord_bot_token_here  # 只有使用 Bot 才需要
+PACK_CONTRACTS=0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a,0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910,0xb2891022648c5fad3721c42c05d8d283d4d53080
 ```
 
 ## 使用方式
@@ -76,15 +77,10 @@ python bot.py
 
 ## 新增卡包合約
 
-若項目方推出新版卡包合約，在 `analyze_all.py` 的 `PACK_CONTRACTS` 加入新地址：
+若項目方推出新版卡包合約，在 `.env` 的 `PACK_CONTRACTS` 加入新地址（逗號分隔）：
 
-```python
-PACK_CONTRACTS = {addr.lower() for addr in {
-    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a",
-    "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",
-    "0xb2891022648c5fad3721c42c05d8d283d4d53080",
-    "0x新合約地址",  # 新增這裡
-}}
+```env
+PACK_CONTRACTS=0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a,0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910,0xb2891022648c5fad3721c42c05d8d283d4d53080,0x新合約地址
 ```
 
 ---
@@ -203,6 +199,30 @@ X Linker — 8,181
 - 若資料量超過 Embed 上限，自動分多則送出
 - 資料來源與 `/sbt_rank` 相同，每 10 分鐘自動更新
 
+---
+
+#### `/pack_leaderboard` — 當月卡包開啟排行榜
+
+無需任何參數，直接輸入：
+```
+/pack_leaderboard
+```
+
+Bot 回傳當月前 50 名開卡包地址及其開包數量：
+```
+Top 50 Pack Openers — 2026-05
+Since 2026-05-01 00:00 UTC+8
+
+#1  0xAbCd...1234 — 616 packs
+#2  0xEfGh...5678 — 459 packs
+...
+```
+
+- 統計範圍：當月 1 日 00:00:00 UTC+8 起
+- 每月自動重置（6 月切換為 6 月排名，無需手動操作）
+- 執行指令時同步最新鏈上資料，背景每 10 分鐘也會自動同步
+- 歷史資料保留於 DB，不因月份切換而刪除
+
 ### CLI 手動操作
 
 ```bash
@@ -224,3 +244,5 @@ python generate_card.py 0xYourWalletAddress
 | `sbt_metadata` | SBT 類型、名稱、圖片檔名（自動更新）|
 | `state` | 最後同步的區塊高度與持有量快照 |
 | `user_wallets` | Discord 使用者 ID 與綁定的錢包地址 |
+| `pack_opens` | 每筆開包交易（hash、合約、買家、區塊、時間戳）|
+| `pack_sync_state` | 每個卡包合約上次同步到的區塊高度 |

@@ -25,11 +25,8 @@ BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY", "")
 # ========================
 # 合約分類（全小寫）
 # ========================
-PACK_CONTRACTS = {addr.lower() for addr in {
-    "0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a",
-    "0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910",
-    "0xb2891022648c5Fad3721C42C05d8d283D4d53080",
-}}
+_raw_contracts = os.getenv("PACK_CONTRACTS", "")
+PACK_CONTRACTS = {a.strip().lower() for a in _raw_contracts.split(",") if a.strip()}
 
 MARKETPLACE_CONTRACT = "0xae3e7268ef5a062946216a44f58a8f685ffd11d0"
 
