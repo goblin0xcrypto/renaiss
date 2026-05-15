@@ -269,6 +269,16 @@ def export_sqlite(balances: dict):
 
     conn = sqlite3.connect(DB_FILE)
     cur = conn.cursor()
+
+    # Persistent name lookup: sbt_metadata survives across runs even when a
+    # single fetch_sbt_metadata() call returns partial data.
+    db_names: dict[str, str] = {}
+    try:
+        for tid, name in cur.execute("SELECT token_id, name FROM sbt_metadata"):
+            db_names[str(tid)] = name
+    except sqlite3.OperationalError:
+        pass
+
     cur.executescript("""
         DROP TABLE IF EXISTS holdings;
         DROP TABLE IF EXISTS rankings;
@@ -284,8 +294,11 @@ def export_sqlite(balances: dict):
         CREATE INDEX idx_rankings_rank  ON rankings(rank);
     """)
 
+    def _name_for(tid: str) -> str:
+        return db_names.get(tid) or ACHIEVEMENTS.get(tid) or f"Unknown #{tid}"
+
     holding_rows = [
-        (addr, int(tid), ACHIEVEMENTS.get(tid, f"Unknown #{tid}"), amt)
+        (addr, int(tid), _name_for(tid), amt)
         for addr, tokens in balances.items()
         for tid, amt in tokens.items() if amt > 0
     ]

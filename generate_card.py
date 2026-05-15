@@ -127,18 +127,31 @@ def get_sbt_image(token_id: int, size: int) -> Image.Image | None:
     if not filename:
         return None
     cache_path = os.path.join(SBT_CACHE, filename)
-    if not os.path.exists(cache_path):
+    if not os.path.exists(cache_path) or os.path.getsize(cache_path) == 0:
         url = SBT_BASE + filename
+        tmp_path = cache_path + ".part"
         try:
-            urllib.request.urlretrieve(url, cache_path)
+            req = urllib.request.Request(url, headers={"User-Agent": "renaiss-bot/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp, open(tmp_path, "wb") as f:
+                f.write(resp.read())
+            os.replace(tmp_path, cache_path)
         except Exception:
-            pass  # could not download SBT image
+            for p in (tmp_path, cache_path):
+                try:
+                    if os.path.exists(p) and os.path.getsize(p) == 0:
+                        os.remove(p)
+                except OSError:
+                    pass
             return None
     try:
         img = Image.open(cache_path).convert("RGBA")
         img = img.resize((size, size), Image.LANCZOS)
         return img
     except Exception:
+        try:
+            os.remove(cache_path)
+        except OSError:
+            pass
         return None
 
 # ── Config ─────────────────────────────────────────────────────────────────────
