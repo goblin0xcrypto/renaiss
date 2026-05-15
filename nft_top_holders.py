@@ -22,10 +22,14 @@ def fetch_sbt_metadata() -> dict[int, dict]:
         r'\{id:(\d+),name:"([^"]+)"[^}]*?imageUrl:"https://[^/]+/' + SBT_BLOB + r'([^"]+)"'
     )
 
+    # Next.js chunk filenames used to be 16 hex chars; the current build emits
+    # mixed alnum+`._~-` ids (e.g. "0s2--elajizdi", "0l2xf34d4v.vr").
+    chunk_re = re.compile(r'/_next/static/chunks/([^/"\'?\s]+?)\.js')
+
     def get_chunk_names(url: str) -> set:
         try:
             html = requests.get(url, timeout=15).text
-            return set(re.findall(r'([a-f0-9]{16})\.js', html))
+            return set(chunk_re.findall(html))
         except Exception:
             return set()
 
@@ -349,9 +353,12 @@ def main():
     # 1. Refresh SBT metadata from JS bundle
     metadata = fetch_sbt_metadata()
     if metadata:
+        print(f"SBT metadata fetched: {len(metadata)} tokens (max id {max(metadata)})")
         save_sbt_metadata(metadata)
         # Update in-memory ACHIEVEMENTS so export uses fresh names
         ACHIEVEMENTS.update({str(tid): m["name"] for tid, m in metadata.items()})
+    else:
+        print("WARNING: fetch_sbt_metadata() returned empty — JS bundle format may have changed")
 
     # 2. Fetch on-chain transfers
     state = load_state()
