@@ -1,6 +1,7 @@
 import json
 import re
 import sqlite3
+import time
 import requests
 from collections import defaultdict
 
@@ -195,26 +196,31 @@ def fetch_transfers_from(startblock: int) -> tuple[list, int]:
     Uses block-range splitting to bypass the 10,000 record API cap.
     """
     transfers = []
-    endblock = 99_999_999
+    # BSC passed 100M blocks; use a far-future ceiling so new blocks stay in range.
+    endblock = 9_999_999_999
     offset = 1000
     last_block = startblock
 
     print(f"\nFetching transfers from block {startblock}...")
 
-    while startblock <= endblock:
+    while True:
+        # BSCScan caps tokentx at 10 pages × `offset` (10,000 records) per query.
+        # If a page returns < offset records naturally, that's end-of-data for the range.
+        # An empty page mid-pagination may be a transient API hiccup, not the real end —
+        # treat it as "more might exist" and let the outer loop re-query from a later block.
         window = []
         page = 1
-
-        while True:
+        natural_end = False
+        while page <= 10:
             batch = fetch_page(startblock, endblock, page, offset)
             if not batch:
                 break
             window.extend(batch)
             if len(batch) < offset:
+                natural_end = True
                 break
             page += 1
-            if len(window) >= 10_000:
-                break
+            time.sleep(0.2)
 
         if not window:
             break
@@ -223,11 +229,13 @@ def fetch_transfers_from(startblock: int) -> tuple[list, int]:
         last_block = int(window[-1]["blockNumber"])
         print(f"  Blocks {startblock}–{endblock}: {len(window)} records (total: {len(transfers)})")
 
-        if len(window) >= 10_000:
-            next_start = last_block if last_block > startblock else last_block + 1
-            startblock = next_start
-        else:
+        if natural_end:
             break
+
+        next_start = last_block + 1
+        if next_start <= startblock:
+            break
+        startblock = next_start
 
     print(f"Done fetching. New records: {len(transfers)}, last block: {last_block}")
     return transfers, last_block
