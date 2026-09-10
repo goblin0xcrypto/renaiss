@@ -24,8 +24,9 @@ def fetch_sbt_metadata() -> dict[int, dict]:
     )
 
     # Next.js chunk filenames used to be 16 hex chars; the current build emits
-    # mixed alnum+`._~-` ids (e.g. "0s2--elajizdi", "0l2xf34d4v.vr").
-    chunk_re = re.compile(r'/_next/static/chunks/([^/"\'?\s]+?)\.js')
+    # mixed alnum+`._~-` ids (e.g. "0s2--elajizdi", "0l2xf34d4v.vr"), served
+    # from either "/_next/static/chunks/" or "/_next/static/immutable/chunks/".
+    chunk_re = re.compile(r'(/_next/static/(?:immutable/)?chunks/[^/"\'?\s]+?\.js)')
 
     def get_chunk_names(url: str) -> set:
         try:
@@ -39,12 +40,9 @@ def fetch_sbt_metadata() -> dict[int, dict]:
     all_chunks  = main_chunks | ach_chunks
 
     metadata: dict[int, dict] = {}
-    for name in all_chunks:
+    for path in all_chunks:
         try:
-            js = requests.get(
-                RENAISS_MAIN + "/_next/static/chunks/" + name + ".js",
-                timeout=15
-            ).text
+            js = requests.get(RENAISS_MAIN + path, timeout=15).text
         except Exception:
             continue
         if SBT_BLOB not in js:
@@ -182,11 +180,21 @@ def fetch_page(startblock: int, endblock: int, page: int, offset: int) -> list:
         "sort": "asc",
         "apikey": API_KEY,
     }
-    resp = requests.get(BSC_API, params=params, timeout=30)
-    data = resp.json()
-    if data["status"] == "1":
-        return data["result"]
-    return []
+    # Rate limits / query timeouts come back as status "0". Retry them, and raise
+    # if they persist — silently returning [] would look like end-of-data.
+    for attempt in range(5):
+        try:
+            data = requests.get(BSC_API, params=params, timeout=30).json()
+        except (requests.RequestException, ValueError) as e:
+            err = str(e)
+        else:
+            if data.get("status") == "1":
+                return data["result"]
+            if data.get("message") == "No transactions found":
+                return []
+            err = f"{data.get('message')}: {data.get('result')}"
+        time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"token1155tx failed (startblock {startblock}, page {page}): {err}")
 
 
 def fetch_transfers_from(startblock: int) -> tuple[list, int]:
@@ -205,16 +213,12 @@ def fetch_transfers_from(startblock: int) -> tuple[list, int]:
 
     while True:
         # BSCScan caps tokentx at 10 pages × `offset` (10,000 records) per query.
-        # If a page returns < offset records naturally, that's end-of-data for the range.
-        # An empty page mid-pagination may be a transient API hiccup, not the real end —
-        # treat it as "more might exist" and let the outer loop re-query from a later block.
+        # fetch_page retries API errors, so a short or empty page is the real end.
         window = []
         page = 1
         natural_end = False
         while page <= 10:
             batch = fetch_page(startblock, endblock, page, offset)
-            if not batch:
-                break
             window.extend(batch)
             if len(batch) < offset:
                 natural_end = True
@@ -225,16 +229,23 @@ def fetch_transfers_from(startblock: int) -> tuple[list, int]:
         if not window:
             break
 
-        transfers.extend(window)
-        last_block = int(window[-1]["blockNumber"])
-        print(f"  Blocks {startblock}–{endblock}: {len(window)} records (total: {len(transfers)})")
-
         if natural_end:
+            transfers.extend(window)
+            last_block = int(window[-1]["blockNumber"])
+            print(f"  Blocks {startblock}–{last_block}: {len(window)} records (total: {len(transfers)})")
             break
 
-        next_start = last_block + 1
-        if next_start <= startblock:
-            break
+        # Hit the 10,000 cap: the last block may be cut off mid-way. Drop it and
+        # re-query from that block so none of its transfers are skipped.
+        tail_block = int(window[-1]["blockNumber"])
+        kept = [tx for tx in window if int(tx["blockNumber"]) < tail_block]
+        if kept:
+            next_start = tail_block
+        else:  # whole window is a single block; nothing smaller to split on
+            kept, next_start = window, tail_block + 1
+        transfers.extend(kept)
+        last_block = int(kept[-1]["blockNumber"])
+        print(f"  Blocks {startblock}–{last_block}: {len(kept)} records (total: {len(transfers)})")
         startblock = next_start
 
     print(f"Done fetching. New records: {len(transfers)}, last block: {last_block}")

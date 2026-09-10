@@ -505,17 +505,20 @@ async def pack_leaderboard(interaction: discord.Interaction):
 # ── Background update ──────────────────────────────────────────────────────────
 
 def _run_update():
-    try:
-        subprocess.run(
-            [sys.executable, os.path.join(BASE_DIR, "nft_top_holders.py")],
-            cwd=BASE_DIR, check=True, capture_output=True
-        )
-    except subprocess.CalledProcessError:
-        pass
+    # Print failures/warnings to stdout so they show up in Railway logs.
+    result = subprocess.run(
+        [sys.executable, os.path.join(BASE_DIR, "nft_top_holders.py")],
+        cwd=BASE_DIR, capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"[update] nft_top_holders.py exited {result.returncode}:\n{result.stderr[-2000:]}", flush=True)
+    for line in result.stdout.splitlines():
+        if line.startswith("WARNING"):
+            print(f"[update] {line}", flush=True)
     try:
         _sync_pack_opens()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[update] pack sync failed: {e}", flush=True)
 
 
 async def periodic_update():
